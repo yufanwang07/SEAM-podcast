@@ -7,4 +7,4 @@ For API scripting to work, create a .env file with
 GROQ_KEY= (groq api key here)
 GEMINI_KEY= (gemini api key here)
 ```
-in the same folder as podcast.py.
+in the same folder as podcast.py. You can run the program via `python3 podcast.py`
