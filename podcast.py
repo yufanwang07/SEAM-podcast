@@ -6,11 +6,33 @@ from dotenv import load_dotenv
 from requests_html import HTMLSession
 from bs4 import BeautifulSoup
 from datetime import datetime
+import google.generativeai as genai
 from groq import Groq
 
 
 load_dotenv()
 GROQ_KEY = os.getenv('GROQ_KEY')
+GEMINI_KEY = os.getenv('GEMINI_KEY')
+genai.configure(api_key=GEMINI_KEY)
+
+generation_config = {
+  "temperature": 1,
+  "top_p": 0.95,
+  "top_k": 64,
+  "max_output_tokens": 8192,
+  "response_mime_type": "text/plain",
+}
+
+model = genai.GenerativeModel(
+  model_name="gemini-1.5-flash",
+  generation_config=generation_config,
+)
+
+chat_session = model.start_chat(
+  history=[
+  ]
+)
+
 client = Groq(api_key=GROQ_KEY)
 AUDIO_EXTENSIONS = ['.mp3', '.wav', '.ogg', '.aac', '.flac']
 
@@ -180,8 +202,7 @@ def transcribe_audio():
                 file=("podcast.mp3", file.read()),
                 model="whisper-large-v3",
                 prompt="The audio is from a podcast with potentially multiple speakers. Format with linebreaks.",
-                response_format="text",
-                language="en",
+                response_format="text"
             )
             return transcription
         except Exception as e:
@@ -201,51 +222,57 @@ def main():
 
     if latest_podcast:
         print("------------------------------------------")
-        print(f"Latest \"{person_name}\" Podcast")
-        print(f"Title: {f"{latest_podcast.get('collectionName')} -- {latest_podcast.get('trackName')}"[:102]}...")
+        print(f"| Latest \"{person_name}\" Podcast")
+        print(f"| Title: {f"{latest_podcast.get('collectionName')} -- {latest_podcast.get('trackName')}"[:102]}...")
         # print(f"Author: {latest_podcast.get('artistName')}") # only works for collection
-        print(f"Date: {latest_podcast.get('releaseDate')}")
+        print(f"| Date: {latest_podcast.get('releaseDate')}")
         # print(f"URL: {latest_podcast.get('collectionViewUrl')}") # collection
-        print(f"Podcast Link: {latest_podcast.get('trackViewUrl')[:95]}...")
+        print(f"| Podcast Link: {latest_podcast.get('trackViewUrl')[:95]}...")
         # latest_podcast.get('artworkUrl600') # thumbnail
 
         podcast_website = find_source(latest_podcast.get('trackViewUrl'))
         if podcast_website:
-            print(f"Source Found: {podcast_website[:95]}...")
+            print(f"| Source Found: {podcast_website[:95]}...")
             print("------------------------------------------")
             print("Scraping source for audio...")
             audio = scrape_for_audio(podcast_website)
-            with open("podcast.mp3","wb") as file:
-                file.write(audio.content)
-            print("Parsing audio...")
-            audio = AudioSegment.from_file("podcast.mp3", format="mp3")
+            if (audio):
+                with open("podcast.mp3","wb") as file:
+                    file.write(audio.content)
+                print("Parsing audio...")
+                audio = AudioSegment.from_file("podcast.mp3", format="mp3")
 
-            if (len(audio) > 3600000):
-                print("Audio is too long to transcribe. Audio is capped at 1 hour for usability purposes.")
-            elif (len(audio) > 1800000):
-                print("Segmenting...")
-                cut1 = audio[:1800000] 
-                cut2 = audio[1800000:] 
-                print("Compressing...")
-                cut1.export("podcast.mp3", format="mp3", bitrate="64k") 
-                print("Done! Transcribing audio...")
-                print("Done! Raw transcribed audio below:")
-                print("------------------------------------------")
-                transcription = transcribe_audio()
-                print(transcription)
-                cut2.export("podcast.mp3", format="mp3", bitrate="64k")
-                transcription2 = transcribe_audio()
-                print(transcription2)
-                print("------------------------------------------")
-                print("Raw transcribed audio above.")
-                transcription1 += transcription2
-                print("Correcting and formatting...")
-                print("")
+                if (len(audio) > 3600000):
+                    print("Audio is too long to transcribe. Audio is capped at 1 hour for usability purposes.")
+                elif (len(audio) > 1800000):
+                    print("Segmenting...")
+                    cut1 = audio[:1800000] 
+                    cut2 = audio[1800000:] 
+                    print("Compressing...")
+                    cut1.export("podcast.mp3", format="mp3", bitrate="64k") 
+                    print("Done! Transcribing audio below...")
+                    print("------------------------------------------")
+                    transcription = transcribe_audio()
+                    print(transcription)
+                    cut2.export("podcast.mp3", format="mp3", bitrate="64k")
+                    transcription2 = transcribe_audio()
+                    print(transcription2)
+                    print("------------------------------------------")
+                    print("Done transcribing audio!")
+                    transcription += transcription2
+                    print("Correcting, formatting, and translating...")
+                    response = chat_session.send_message(f"Correct the following raw transcription, and format it (linebreaks with speakers, try to label names where possible). Remove unecessary excess content (such as repeated oh yeah, yeah, yeah, repeated ums, etc.). Respond with only the corrected script (no title!). Translate to english if applicable. \n{transcription}")
+                    print("Formatted!")
+                    print("------------------------------------------")
+                    print(response.text)
+                    
+                else:
+                    print("Done! Transcribing audio...")
+                    print("------------------------------------------")
+                    transcription = transcribe_audio()
+                    print(transcription)
             else:
-                print("Done! Transcribing audio...")
-                print("------------------------------------------")
-                transcription = transcribe_audio()
-                print(transcription)
+                print("Audio source not found.")
             
 
 
